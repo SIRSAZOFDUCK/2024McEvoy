@@ -1,4 +1,5 @@
-## McEvoy L 2024
+### The impact of extreme heat on cardiovascular morbidity in Herefordshire and Worcestershire, England
+### McEvoy L 2024
 
 ## PRELIMS -------------
 
@@ -14,7 +15,7 @@ list.of.packages <- c("dplyr", "lubridate", "survival", "tidyr")
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 
-
+# Load packages
 library(lubridate)
 library(dplyr)
 library(survival)
@@ -43,9 +44,11 @@ data <- read.csv("example_extract.csv") %>%
   # COnvert ID to text format
   mutate(id = as.character(id)) %>%
   # Label county
-  mutate(county = ifelse(county == "E10000034", "Worcestershire", ifelse(county == "E06000019", "Herefordshire", "Other"))) %>%
+  mutate(county = ifelse(county == "E10000034", "Worcestershire", ifelse(county == "E99999999", "Herefordshire", "Other"))) %>%
+  filter(county != "Other") %>%
   # Label sex
   mutate(sex = ifelse(sex == 1, "Male", ifelse(sex ==2, "Female", "Unknown")))  %>%
+  filter(sex != "Unknown") %>%
   # Rescale age so the analysis gives the OR for every 10 years
   mutate(age.scaled = age / 10)
 
@@ -71,13 +74,14 @@ heatwave <- read.csv("heatwave_periods.csv") %>%
 
 # Define ICD disease subgroups
 
+other.heart.disease <- paste0("I", seq(30,52)) # Other forms of heart disease
 hypertension <- paste0("I", seq(10,15)) # Hypertensive diseases
-cvd <- paste0("I", seq(20,25))  # Ischaemic heart diseases
-stroke <- paste0("I", seq(60,69))  # Cerebraovascular diseases
+ihd <- paste0("I", seq(20,25))  # Ischaemic heart diseases
+stroke <- paste0("I", seq(60,69))  # Cerebrovascular diseases
   
 # Filter for disease subgroup (unhash the line and edit as needed)
 
-# data <- data %>% filter(icd.code %in% hypertension) # Options hypertension, cvd, stroke 
+# data <- data %>% filter(icd.code %in% hypertension) # Options hypertension, other.heart.disease, ihd, stroke 
 
 ## PROCESS DATA ---------
 
@@ -122,7 +126,38 @@ final.data <- expanded.data %>%
 
 
 
-## ANALYSIS -----------
+## UNIVARIATE ANALYSIS -----------
+
+# Perform conditional logistic regression
+model <- clogit(case_control == "Case" ~ heatwave + strata(id), data = final.data)
+
+# Extract the model coefficients summary
+coef_summary <- summary(model)$coefficients
+
+# Calculate the Odds Ratios (OR)
+OR <- exp(coef_summary[, "coef"])
+
+# Calculate the 95% Confidence Intervals (CI)
+CI_lower <- exp(coef_summary[, "coef"] - 1.96 * coef_summary[, "se(coef)"])
+CI_upper <- exp(coef_summary[, "coef"] + 1.96 * coef_summary[, "se(coef)"])
+
+# Extract the p-values
+p_values <- coef_summary[, "Pr(>|z|)"]
+
+# Combine the OR, CI, and p-values into a data frame
+OR_CI_p <- data.frame(
+  Variable = rownames(coef_summary),
+  OR = OR,
+  CI_lower = CI_lower,
+  CI_upper = CI_upper,
+  p_value = p_values
+)
+
+# Print the OR, CI, and p-values
+print(OR_CI_p)
+
+
+## MULTIVARIATE ANALYSIS -----------
 
 # Perform conditional logistic regression
 model <- clogit(case_control == "Case" ~ heatwave + age.scaled + sex + county + strata(id), data = final.data)
